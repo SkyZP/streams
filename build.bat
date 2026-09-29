@@ -38,7 +38,7 @@ del StreamPad.spec 2>nul
 
 echo.
 echo [3/3] Compile ke satu file .exe portable...
-python -m PyInstaller --onefile --windowed --name "StreamPad-1.0.0-portable" --icon=assets\icon.ico main.py
+python -m PyInstaller --onefile --windowed --name "StreamPad-1.0.0-portable" --icon=assets\icon.ico --add-data "assets\icon.ico;assets" main.py
 
 echo.
 if exist dist\StreamPad-1.0.0-portable.exe (
