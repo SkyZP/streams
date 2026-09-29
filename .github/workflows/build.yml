@@ -24,7 +24,7 @@ jobs:
 
       - name: Compile jadi .exe portable
         run: |
-          python -m PyInstaller --onefile --windowed --name "StreamPad-1.0.0-portable" --icon=assets\icon.ico main.py
+          python -m PyInstaller --onefile --windowed --name "StreamPad-1.0.0-portable" --icon=assets\icon.ico --add-data "assets\icon.ico;assets" main.py
 
       - name: Upload hasil .exe
         uses: actions/upload-artifact@v4
