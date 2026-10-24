@@ -1,10 +1,13 @@
 # StreamPad
 
 Aplikasi soundboard & macro deck ala Stream Deck, dibuat untuk dipakai bareng
-macropad **DumbPad** (QMK). Modern UI, portable (tanpa installer), dan tombol
-bisa dikustomisasi penuh: putar sound effect dari file di komputer, atur
-volume sistem, dan dijalankan lewat klik mouse ATAU lewat tombol fisik di
-DumbPad.
+macropad **DumbPad** (QMK). Tampilan **Liquid Glass**: background cair yang
+bergerak pelan, panel & tombol kaca dengan kilau dan garis tepi terang, glow
+berwarna saat hover, toggle yang meluncur seperti cairan, dan dialog fade-in.
+Portable (tanpa installer). Setiap tombol punya dua
+pilihan aksi saja — **Putar Suara** atau **Buka Aplikasi** — biar tetap
+simpel dan gampang dikombinasikan dengan software lain yang sudah kamu
+pakai.
 
 ## ⚠️ Catatan penting soal file .exe
 
@@ -57,26 +60,36 @@ python main.py
 ## Cara pakai aplikasi
 
 ### 1. Menambah tombol
-Klik **"+ Tambah Tombol"**, lalu atur:
+Klik **"＋ Tambah Tombol"**, lalu atur:
 - **Nama Tombol** — label yang tampil.
 - **Aksi**:
-  - *Putar Suara* — pilih file `.mp3/.wav/.ogg/.flac/.m4a` dari komputermu.
-  - *Volume Naik / Turun* — atur besar step-nya (misal 5% tiap tekan).
-  - *Mute / Unmute* — toggle mute sistem.
-  - *Set Volume ke Level Tertentu* — langsung set ke persentase tertentu
-    (misal langsung 50%).
-- **Hotkey** — klik "Rekam tombol...", lalu tekan tombol di DumbPad-mu.
+  - *Putar Suara* — pilih file `.mp3/.wav/.ogg/.flac/.m4a` dari komputermu,
+    atur volume khusus suara ini, dan **potong durasinya** kalau file
+    aslinya kepanjangan: geser slider "Mulai" & "Selesai" untuk menentukan
+    bagian yang mau diputar, lalu klik "▶ Preview Potongan" buat dengar
+    hasilnya sebelum disimpan.
+  - *Buka Aplikasi* — pilih file `.exe` (atau file apa pun) yang mau
+    dijalankan, dengan argumen opsional kalau perlu.
+- **Hotkey** — klik tombol rekam, lalu tekan tombol di DumbPad-mu.
   Aplikasi akan otomatis mendeteksi kode tombolnya.
-- **Warna** — biar gampang dibedakan secara visual.
+- **Warna** — biar gampang dibedakan secara visual, sekaligus jadi warna
+  efek glow saat kartu tombol di-hover.
 
 ### 2. Mengedit / menghapus tombol
-Klik **"Mode Edit: OFF"** supaya berubah jadi **ON**. Selama mode ini aktif,
-klik tombol mana pun di grid untuk membuka ulang konfigurasinya (termasuk
-tombol "Hapus Tombol" di dalam dialog). Matikan lagi mode edit untuk kembali
-ke mode normal (klik = jalankan aksi).
+Klik toggle **"✎ Edit"** di kanan atas. Selama mode ini aktif, klik kartu
+tombol mana pun untuk membuka ulang konfigurasinya (termasuk tombol "Hapus
+Tombol" di dalam dialog). Pindah lagi ke **"▶ Jalankan"** untuk kembali ke
+mode normal (klik = jalankan aksi).
 
-### 3. Integrasi dengan DumbPad
-DumbPad menjalankan firmware QMK dan oleh Windows dibaca sebagai **keyboard
+### 3. Profile (banyak set tombol)
+Di bawah header ada bar profile. Klik nama profile untuk pindah set tombol,
+klik **"＋ Profile"** untuk bikin profile baru (kosong), atau klik **"⚙"**
+untuk mengubah nama / menghapus profile yang sudah ada. Berguna kalau kamu
+mau, misalnya, satu profile untuk sound effect meme dan profile lain untuk
+shortcut aplikasi kerja — tinggal pencet tombol di DumbPad untuk pindah
+(atau klik nama profile-nya).
+
+### 4. Integrasi dengan DumbPad
 USB biasa**. Jadi setiap tombol fisik di DumbPad = mengirim kode tombol
 tertentu, sama seperti kamu menekan huruf/angka di keyboard.
 
@@ -93,7 +106,7 @@ Hotkey*. Jadi alurnya:
 3. Selesai. Sekarang menekan tombol fisik itu di DumbPad akan menjalankan
    aksi yang sama seperti mengklik tombolnya di layar.
 
-### 4. Konfigurasi tersimpan otomatis
+### 5. Konfigurasi tersimpan otomatis
 Semua tombol yang kamu buat disimpan di file `config.json`, ada di folder
 yang sama dengan `StreamPad.exe`. File ini ikut portable — kalau kamu pindah
 `StreamPad.exe` ke folder/komputer lain, bawa juga `config.json`-nya supaya
@@ -105,8 +118,9 @@ setup tombolmu tidak hilang.
   sistem **butuh dijalankan sebagai Administrator** agar bisa mendeteksi
   tombol walau aplikasi lain sedang fokus. Kalau hotkey dari DumbPad tidak
   terdeteksi, coba klik kanan `StreamPad.exe` → "Run as administrator".
-- Kontrol volume sistem memakai `pycaw` (Windows Core Audio API) — hanya
-  berjalan di Windows.
+- Kontrol volume sistem sudah tidak ada di versi ini (dulu memakai `pycaw`);
+  aksi sekarang cuma Putar Suara & Buka Aplikasi, jadi dependency-nya lebih
+  ringan dan cepat di-build.
 - Pemutaran suara memakai `QtMultimedia` (bawaan PySide6) sehingga mendukung
   beberapa suara diputar bersamaan (overlap), seperti soundboard sungguhan.
 
@@ -116,9 +130,9 @@ setup tombolmu tidak hilang.
 StreamPad/
 ├── main.py                  # entry point
 ├── modules/
-│   ├── gui.py                # UI utama + dialog konfigurasi tombol
+│   ├── glass.py              # komponen Liquid Glass (background, panel, tombol, toggle)
+│   ├── gui.py                # layout aplikasi + dialog konfigurasi tombol & profile
 │   ├── audio_manager.py      # pemutaran sound effect
-│   ├── volume_manager.py     # kontrol volume sistem (pycaw)
 │   ├── hotkey_manager.py     # pendengaran hotkey global (termasuk DumbPad)
 │   ├── config_manager.py     # simpan/muat config.json
 │   └── styles.py              # tema modern (dark)
