@@ -1,28 +1,31 @@
 """
 gui.py
-Antarmuka StreamPad gaya "glass dashboard": pill nav yang solid (bukan
-indikator melayang yang gampang meleset posisinya), kartu tombol dengan
-glow saat hover, orb dekoratif di background, dan sistem Profile supaya
-satu DumbPad bisa punya beberapa set tombol berbeda.
+Antarmuka StreamPad bergaya Liquid Glass: background cair yang bergerak
+pelan, panel & tombol kaca dengan kilau dan rim terang, toggle yang
+meluncur seperti cairan, plus sistem Profile dan potong durasi suara.
 """
 import os
 import subprocess
 import sys
 import uuid
 
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QUrl
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, Signal, QUrl, QRectF, QSize
+from PySide6.QtGui import QColor, QPainter, QFont, QFontMetrics
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QGridLayout, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QDialog, QLineEdit, QComboBox, QFileDialog, QSlider,
-    QMessageBox, QColorDialog, QScrollArea, QButtonGroup, QInputDialog,
-    QGraphicsDropShadowEffect, QGraphicsBlurEffect, QFormLayout
+    QLabel, QLineEdit, QComboBox, QFileDialog, QSlider, QMessageBox,
+    QColorDialog, QScrollArea, QButtonGroup, QInputDialog, QFormLayout,
+    QSizePolicy, QDialog
 )
 
 from modules import config_manager
 from modules.audio_manager import AudioManager
 from modules.hotkey_manager import HotkeyManager
+from modules.glass import (
+    Tween, paint_glass, paint_glow, LiquidBackground, GlassPanel,
+    GlassPillButton, GlassTab, GlassToggle, GlassDialog
+)
 
 ACTION_LABELS = {"sound": "Putar Suara", "app": "Buka Aplikasi"}
 ACTION_ICONS = {"sound": "🔊", "app": "🚀"}
@@ -48,224 +51,178 @@ def launch_app(path: str, args: str):
         print(f"Gagal membuka aplikasi '{path}': {e}")
 
 
-# ---------------------------------------------------------------- Glow helpers
-class GlowButton(QPushButton):
-    """Tombol pill dengan glow halus saat hover — dipakai di nav & profile bar."""
-
-    def __init__(self, text: str, object_name: str = "NavItem", glow_color: str = "#6470ff", parent=None):
-        super().__init__(text, parent)
-        self.setObjectName(object_name)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._shadow = QGraphicsDropShadowEffect(self)
-        self._shadow.setBlurRadius(0)
-        self._shadow.setOffset(0, 0)
-        self._shadow.setColor(QColor(glow_color))
-        self.setGraphicsEffect(self._shadow)
-        self._anim = QPropertyAnimation(self._shadow, b"blurRadius", self)
-        self._anim.setDuration(160)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-    def _animate(self, value: float):
-        self._anim.stop()
-        self._anim.setStartValue(self._shadow.blurRadius())
-        self._anim.setEndValue(value)
-        self._anim.start()
-
-    def enterEvent(self, event):
-        self._animate(16)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._animate(0)
-        super().leaveEvent(event)
-
-
-class GlowOrb(QWidget):
-    """Bulatan blur lembut buat dekorasi background, seperti referensi dashboard."""
-
-    def __init__(self, color: str, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setStyleSheet(f"background: {color}; border-radius: 140px;")
-        self.setFixedSize(280, 280)
-        blur = QGraphicsBlurEffect(self)
-        blur.setBlurRadius(70)
-        self.setGraphicsEffect(blur)
-
-
-# ---------------------------------------------------------------- Segmented toggle
-class SegmentedToggle(QWidget):
-    """Toggle 'Jalankan / Edit' — dua pill solid dalam satu kapsul kaca."""
-    toggled = Signal(bool)  # True = edit mode
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("GlassPill")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(2)
-
-        self.btn_run = GlowButton("▶  Jalankan", "NavItemAccent", "#6470ff")
-        self.btn_edit = GlowButton("✎  Edit", "NavItemAccent", "#6470ff")
-        for b in (self.btn_run, self.btn_edit):
-            b.setCheckable(True)
-            layout.addWidget(b)
-
-        self.group = QButtonGroup(self)
-        self.group.setExclusive(True)
-        self.group.addButton(self.btn_run, 0)
-        self.group.addButton(self.btn_edit, 1)
-        self.btn_run.setChecked(True)
-        self.group.idClicked.connect(lambda idx: self.toggled.emit(idx == 1))
-
-
 # ---------------------------------------------------------------- Profile bar
 class ProfileBar(QWidget):
-    profile_changed = Signal(str)   # profile id
+    profile_changed = Signal(str)   # id profile yang dipilih
     manage_requested = Signal()
+    add_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._tabs = {}
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(8)
 
-        pill = QWidget()
-        pill.setObjectName("GlassPill")
-        self.pill_layout = QHBoxLayout(pill)
-        self.pill_layout.setContentsMargins(4, 4, 4, 4)
-        self.pill_layout.setSpacing(2)
+        self.panel = GlassPanel(radius=25)
+        self.panel.setFixedHeight(50)
+        self.tab_layout = QHBoxLayout(self.panel)
+        self.tab_layout.setContentsMargins(5, 4, 5, 4)
+        self.tab_layout.setSpacing(2)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(46)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setFixedHeight(50)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setWidget(pill)
-        self.pill = pill
+        scroll.viewport().setAutoFillBackground(False)
+        scroll.setWidget(self.panel)
         outer.addWidget(scroll, 1)
 
-        self.add_btn = GlowButton("＋ Profile", "NavAdd", "#6470ff")
-        self.add_btn.clicked.connect(self._request_add)
-        outer.addWidget(self.add_btn)
+        add_btn = GlassPillButton("＋ Profile")
+        add_btn.clicked.connect(self.add_requested.emit)
+        outer.addWidget(add_btn)
 
-        self.manage_btn = GlowButton("⚙", "NavAdd", "#6470ff")
-        self.manage_btn.setFixedWidth(44)
-        self.manage_btn.clicked.connect(self.manage_requested.emit)
-        outer.addWidget(self.manage_btn)
-
-        self.group = QButtonGroup(self)
-        self.group.setExclusive(True)
-        self._on_add = None
-
-    def _request_add(self):
-        if self._on_add:
-            self._on_add()
-
-    def set_add_handler(self, fn):
-        self._on_add = fn
+        manage_btn = GlassPillButton("⚙")
+        manage_btn.setFixedWidth(52)
+        manage_btn.clicked.connect(self.manage_requested.emit)
+        outer.addWidget(manage_btn)
 
     def populate(self, profiles: list, active_id: str):
-        for b in self.group.buttons():
-            self.group.removeButton(b)
-        while self.pill_layout.count():
-            item = self.pill_layout.takeAt(0)
+        for tab in list(self._tabs.values()):
+            self._group.removeButton(tab)
+        self._tabs.clear()
+        while self.tab_layout.count():
+            item = self.tab_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
         for profile in profiles:
-            btn = GlowButton(profile["name"], "NavItem", "#6470ff")
-            btn.setCheckable(True)
-            btn.setChecked(profile["id"] == active_id)
-            btn.clicked.connect(lambda checked=False, pid=profile["id"]: self.profile_changed.emit(pid))
-            self.group.addButton(btn)
-            self.pill_layout.addWidget(btn)
+            tab = GlassTab(profile["name"])
+            tab.set_checked_silent(profile["id"] == active_id)
+            tab.clicked.connect(lambda checked=False, pid=profile["id"]: self.profile_changed.emit(pid))
+            self._group.addButton(tab)
+            self._tabs[profile["id"]] = tab
+            self.tab_layout.addWidget(tab)
+        self.tab_layout.addStretch()
+
+    def set_active(self, profile_id: str):
+        tab = self._tabs.get(profile_id)
+        if tab is not None and not tab.isChecked():
+            tab.setChecked(True)
 
 
 # ---------------------------------------------------------------- Deck button
 class DeckButton(QPushButton):
+    """Kartu tombol kaca bertinta warna pilihan user, dengan glow saat hover."""
+    MARGIN = 14
+
     def __init__(self, data: dict, parent=None):
         super().__init__(parent)
         self.setObjectName("DeckButton")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.data = data
-
-        self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(0)
-        self.shadow.setOffset(0, 0)
-        self.shadow.setColor(QColor(data.get("color", "#6470ff")))
-        self.setGraphicsEffect(self.shadow)
-
-        self._glow = QPropertyAnimation(self.shadow, b"blurRadius", self)
-        self._glow.setDuration(180)
-        self._glow.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-        self.refresh()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setMinimumWidth(156)
+        self.setFixedHeight(136)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._hover = Tween(self, 240)
+        self._press = Tween(self, 120)
 
     def refresh(self):
-        icon = ACTION_ICONS.get(self.data.get("action_type", "sound"), "🔘")
-        label = self.data.get("label", "Tombol")
-        hotkey = self.data.get("hotkey", "")
-        text = f"{icon}\n{label}" + (f"\n[{hotkey}]" if hotkey else "")
-        self.setText(text)
-
-        color = self.data.get("color", "#6470ff")
-        self.shadow.setColor(QColor(color))
-        darker = QColor(color).darker(160).name()
-        self.setStyleSheet(
-            f"""
-            QPushButton#DeckButton {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {color}, stop:1 {darker});
-                border: 1px solid rgba(255,255,255,0.14);
-                border-radius: 20px;
-                min-width: 128px;
-                min-height: 104px;
-                font-weight: 600;
-                font-size: 13px;
-                color: white;
-                padding: 8px;
-            }}
-            """
-        )
-
-    def _animate_glow(self, to_value: float):
-        self._glow.stop()
-        self._glow.setStartValue(self.shadow.blurRadius())
-        self._glow.setEndValue(to_value)
-        self._glow.start()
+        self.update()
 
     def enterEvent(self, event):
-        self._animate_glow(30)
+        self._hover.go(1.0)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._animate_glow(0)
+        self._hover.go(0.0)
+        self._press.go(0.0)
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
-        self._animate_glow(48)
+        self._press.go(1.0)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        self._animate_glow(30 if self.underMouse() else 0)
+        self._press.go(0.0)
         super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        m = self.MARGIN
+        body = QRectF(self.rect()).adjusted(m, m, -m, -m)
+        shrink = 3.0 * self._press.current
+        body = body.adjusted(shrink, shrink, -shrink, -shrink)
+
+        color = QColor(self.data.get("color", "#6470ff"))
+        hover = self._hover.current
+        radius = 24.0
+
+        paint_glow(p, body, radius, color, 0.20 + 0.80 * hover)
+        paint_glass(p, body, radius, tint=color, strength=1.0 + 0.30 * hover)
+
+        # ikon
+        icon = ACTION_ICONS.get(self.data.get("action_type", "sound"), "🔘")
+        icon_font = QFont("Segoe UI Emoji")
+        icon_font.setPixelSize(30)
+        p.setFont(icon_font)
+        p.setPen(QColor(255, 255, 255, 245))
+        p.drawText(QRectF(body.left(), body.top() + 9, body.width(), 40),
+                   Qt.AlignmentFlag.AlignCenter, icon)
+
+        # label
+        label_font = QFont("Segoe UI")
+        label_font.setPixelSize(13)
+        label_font.setWeight(QFont.Weight.DemiBold)
+        p.setFont(label_font)
+        fm = QFontMetrics(label_font)
+        text = fm.elidedText(self.data.get("label", "Tombol"),
+                             Qt.TextElideMode.ElideRight, int(body.width() - 22))
+        p.setPen(QColor(255, 255, 255, 250))
+        p.drawText(QRectF(body.left() + 11, body.top() + 51, body.width() - 22, 20),
+                   Qt.AlignmentFlag.AlignCenter, text)
+
+        # chip hotkey
+        hotkey = self.data.get("hotkey", "")
+        if hotkey:
+            chip_font = QFont("Segoe UI")
+            chip_font.setPixelSize(10)
+            chip_font.setWeight(QFont.Weight.DemiBold)
+            cfm = QFontMetrics(chip_font)
+            label = hotkey.upper()
+            cw = min(body.width() - 22, cfm.horizontalAdvance(label) + 20)
+            chip = QRectF(body.center().x() - cw / 2.0, body.bottom() - 27, cw, 18)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 42))
+            p.drawRoundedRect(chip, 9, 9)
+            p.setFont(chip_font)
+            p.setPen(QColor(255, 255, 255, 225))
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, label)
 
 
 # ---------------------------------------------------------------- Hotkey capture
-class HotkeyCaptureButton(QPushButton):
+class HotkeyCaptureButton(GlassPillButton):
     captured = Signal(str)
-    DEFAULT_TEXT = "🎙  Rekam tombol (DumbPad / keyboard)"
+    DEFAULT_TEXT = "🎙  Rekam tombol"
 
     def __init__(self, hotkey_manager: HotkeyManager, line_edit: QLineEdit, parent=None):
-        super().__init__(self.DEFAULT_TEXT, parent)
+        super().__init__(self.DEFAULT_TEXT, "normal", parent)
         self.hotkey_manager = hotkey_manager
         self.line_edit = line_edit
         self.clicked.connect(self._start_capture)
         self.captured.connect(self._on_captured)
 
     def _start_capture(self):
-        self.setText("Menunggu... tekan tombolnya sekarang")
+        self.setText("Menunggu... tekan tombolnya")
         self.setEnabled(False)
+        # callback datang dari thread library keyboard -> lewat signal ke thread utama Qt
         self.hotkey_manager.capture_next_key(lambda key_name: self.captured.emit(key_name))
 
     def _on_captured(self, key_name):
@@ -275,12 +232,12 @@ class HotkeyCaptureButton(QPushButton):
 
 
 # ---------------------------------------------------------------- Config dialog
-class ButtonConfigDialog(QDialog):
+class ButtonConfigDialog(GlassDialog):
     def __init__(self, button_data: dict, hotkey_manager: HotkeyManager, audio_manager: AudioManager,
                  parent=None, allow_delete: bool = False):
         super().__init__(parent)
         self.setWindowTitle("Konfigurasi Tombol")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(500)
         self.button_data = dict(button_data)
         self.hotkey_manager = hotkey_manager
         self.audio_manager = audio_manager
@@ -289,13 +246,15 @@ class ButtonConfigDialog(QDialog):
         self._probe_player = None
 
         outer = QVBoxLayout(self)
-        outer.setSpacing(4)
+        outer.setContentsMargins(24, 20, 24, 20)
+        outer.setSpacing(6)
         title = QLabel("Konfigurasi Tombol")
         title.setObjectName("DialogTitle")
         outer.addWidget(title)
 
         form = QFormLayout()
         form.setVerticalSpacing(10)
+        form.setHorizontalSpacing(14)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         outer.addLayout(form)
 
@@ -315,10 +274,11 @@ class ButtonConfigDialog(QDialog):
         self.action_combo.currentIndexChanged.connect(self._update_visible_fields)
         form.addRow(field_label("AKSI"), self.action_combo)
 
+        # --- Suara ---
         sound_row = QHBoxLayout()
         self.sound_path_edit = QLineEdit(self.button_data.get("sound_path", ""))
         self.sound_path_edit.setReadOnly(True)
-        sound_browse = QPushButton("Pilih File")
+        sound_browse = GlassPillButton("Pilih File")
         sound_browse.clicked.connect(self._browse_sound)
         sound_row.addWidget(self.sound_path_edit)
         sound_row.addWidget(sound_browse)
@@ -344,7 +304,7 @@ class ButtonConfigDialog(QDialog):
         self.trim_time_label = QLabel("0:00 — 0:00 / 0:00")
         self.trim_time_label.setObjectName("Hint")
 
-        preview_btn = QPushButton("▶  Preview Potongan")
+        preview_btn = GlassPillButton("▶  Preview Potongan")
         preview_btn.clicked.connect(self._preview_trim)
 
         self.trim_start_label = field_label("POTONG — MULAI")
@@ -360,7 +320,6 @@ class ButtonConfigDialog(QDialog):
             self.trim_start_label, self.trim_end_label, self.trim_info_label,
             self.trim_preview_placeholder, preview_btn
         ]
-        self._preview_btn = preview_btn
 
         # Muat durasi kalau sudah ada file suara tersimpan sebelumnya
         if self.button_data.get("sound_path"):
@@ -371,10 +330,11 @@ class ButtonConfigDialog(QDialog):
                 existing_end=self.button_data.get("sound_end_ms"),
             )
 
+        # --- Aplikasi ---
         app_row = QHBoxLayout()
         self.app_path_edit = QLineEdit(self.button_data.get("app_path", ""))
         self.app_path_edit.setReadOnly(True)
-        app_browse = QPushButton("Pilih File")
+        app_browse = GlassPillButton("Pilih File")
         app_browse.clicked.connect(self._browse_app)
         app_row.addWidget(self.app_path_edit)
         app_row.addWidget(app_browse)
@@ -388,6 +348,7 @@ class ButtonConfigDialog(QDialog):
         self.app_args_label = field_label("ARGUMEN (OPSIONAL)")
         form.addRow(self.app_args_label, self.app_args_edit)
 
+        # --- Hotkey ---
         hotkey_row = QHBoxLayout()
         self.hotkey_edit = QLineEdit(self.button_data.get("hotkey", ""))
         self.hotkey_edit.setReadOnly(True)
@@ -399,12 +360,13 @@ class ButtonConfigDialog(QDialog):
         hotkey_widget.setLayout(hotkey_row)
         form.addRow(field_label("HOTKEY DUMBPAD"), hotkey_widget)
 
+        # --- Warna ---
         color_row = QHBoxLayout()
         self.color_value = self.button_data.get("color", "#6470ff")
         self.color_preview = QLabel()
-        self.color_preview.setFixedSize(28, 28)
+        self.color_preview.setFixedSize(32, 32)
         self._update_color_preview()
-        color_btn = QPushButton("Pilih Warna")
+        color_btn = GlassPillButton("Pilih Warna")
         color_btn.clicked.connect(self._choose_color)
         color_row.addWidget(self.color_preview)
         color_row.addWidget(color_btn)
@@ -413,22 +375,21 @@ class ButtonConfigDialog(QDialog):
         color_widget.setLayout(color_row)
         form.addRow(field_label("WARNA"), color_widget)
 
+        # --- Tombol bawah ---
         button_row = QHBoxLayout()
         if allow_delete:
-            delete_btn = QPushButton("Hapus Tombol")
-            delete_btn.setObjectName("Danger")
+            delete_btn = GlassPillButton("Hapus Tombol", "danger")
             delete_btn.clicked.connect(self._request_delete)
             button_row.addWidget(delete_btn)
         button_row.addStretch()
 
-        cancel_btn = QPushButton("Batal")
+        cancel_btn = GlassPillButton("Batal")
         cancel_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Simpan")
-        save_btn.setObjectName("Primary")
+        save_btn = GlassPillButton("Simpan", "primary")
         save_btn.clicked.connect(self.accept)
         button_row.addWidget(cancel_btn)
         button_row.addWidget(save_btn)
-        outer.addSpacing(6)
+        outer.addSpacing(8)
         outer.addLayout(button_row)
 
         self._update_visible_fields()
@@ -439,7 +400,8 @@ class ButtonConfigDialog(QDialog):
 
     def _update_color_preview(self):
         self.color_preview.setStyleSheet(
-            f"background-color: {self.color_value}; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);"
+            f"background-color: {self.color_value}; border-radius: 16px;"
+            " border: 1px solid rgba(255,255,255,0.45);"
         )
 
     def _choose_color(self):
@@ -551,17 +513,6 @@ class ButtonConfigDialog(QDialog):
         data["color"] = self.color_value
         return data
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.setWindowOpacity(0.0)
-        anim = QPropertyAnimation(self, b"windowOpacity", self)
-        anim.setDuration(180)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._show_anim = anim
-
     def done(self, result):
         if self._probe_player:
             self._probe_player.deleteLater()
@@ -570,49 +521,51 @@ class ButtonConfigDialog(QDialog):
 
 
 # ---------------------------------------------------------------- Profile manager dialog
-class ProfileManagerDialog(QDialog):
+class ProfileManagerDialog(GlassDialog):
     def __init__(self, profiles: list, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Kelola Profile")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(460)
         self.profiles = [dict(p) for p in profiles]  # kerja di salinan; batal = tidak ada perubahan
         self.deleted_ids = set()
 
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 20, 24, 20)
+        outer.setSpacing(8)
         title = QLabel("Kelola Profile")
         title.setObjectName("DialogTitle")
         outer.addWidget(title)
 
         self.rows_layout = QVBoxLayout()
+        self.rows_layout.setSpacing(8)
         outer.addLayout(self.rows_layout)
         self.row_widgets = {}
         for p in self.profiles:
             self._add_row(p)
 
-        add_btn = QPushButton("＋ Tambah Profile Baru")
+        add_btn = GlassPillButton("＋ Tambah Profile Baru")
         add_btn.clicked.connect(self._add_new_profile)
         outer.addWidget(add_btn)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
-        cancel_btn = QPushButton("Batal")
+        cancel_btn = GlassPillButton("Batal")
         cancel_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Simpan")
-        save_btn.setObjectName("Primary")
+        save_btn = GlassPillButton("Simpan", "primary")
         save_btn.clicked.connect(self._on_save)
         button_row.addWidget(cancel_btn)
         button_row.addWidget(save_btn)
-        outer.addSpacing(6)
+        outer.addSpacing(8)
         outer.addLayout(button_row)
 
     def _add_row(self, profile: dict):
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         edit = QLineEdit(profile["name"])
         row.addWidget(edit)
-        del_btn = QPushButton("🗑")
-        del_btn.setObjectName("Danger")
-        del_btn.setFixedWidth(44)
-        del_btn.clicked.connect(lambda: self._remove_row(profile["id"]))
+        del_btn = GlassPillButton("🗑", "danger")
+        del_btn.setFixedWidth(56)
+        del_btn.clicked.connect(lambda checked=False, pid=profile["id"]: self._remove_row(pid))
         row.addWidget(del_btn)
         container = QWidget()
         container.setLayout(row)
@@ -647,26 +600,19 @@ class ProfileManagerDialog(QDialog):
         self.profiles = [p for p in self.profiles if p["id"] not in self.deleted_ids]
         self.accept()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.setWindowOpacity(0.0)
-        anim = QPropertyAnimation(self, b"windowOpacity", self)
-        anim.setDuration(180)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._show_anim = anim
-
 
 # ---------------------------------------------------------------- Main window
 class MainWindow(QMainWindow):
+    # Hotkey datang dari thread library keyboard; signal ini memindahkannya
+    # ke thread utama Qt supaya audio & UI aman dijalankan.
     action_requested = Signal(object)
 
     def __init__(self):
         super().__init__()
         self.action_requested.connect(self._execute_action)
         self.setWindowTitle("StreamPad — Soundboard & Macro Deck untuk DumbPad")
-        self.resize(1000, 680)
+        self.resize(1040, 700)
+        self.setMinimumSize(760, 520)
 
         self.config = config_manager.load_config()
         self.audio_manager = AudioManager()
@@ -680,23 +626,16 @@ class MainWindow(QMainWindow):
         return config_manager.get_active_profile(self.config)
 
     def _build_ui(self):
-        root = QWidget()
+        root = LiquidBackground()
         root.setObjectName("Root")
         self.setCentralWidget(root)
 
-        # orb dekoratif di background, seperti pada referensi dashboard
-        orb1 = GlowOrb("#6470ff", root)
-        orb1.move(-80, -60)
-        orb2 = GlowOrb("#8b5cf6", root)
-        orb2.move(760, 420)
-        orb1.lower()
-        orb2.lower()
-
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(24, 20, 24, 20)
+        outer.setContentsMargins(28, 22, 28, 22)
         outer.setSpacing(14)
 
         header_row = QHBoxLayout()
+        header_row.setSpacing(12)
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
         title = QLabel("StreamPad")
@@ -708,19 +647,17 @@ class MainWindow(QMainWindow):
         header_row.addLayout(title_box)
         header_row.addStretch()
 
-        self.toggle = SegmentedToggle()
+        self.toggle = GlassToggle()
         self.toggle.toggled.connect(self._set_edit_mode)
         header_row.addWidget(self.toggle)
 
-        add_btn = QPushButton("＋  Tambah Tombol")
-        add_btn.setObjectName("Primary")
+        add_btn = GlassPillButton("＋  Tambah Tombol", "primary")
         add_btn.clicked.connect(self._add_button)
         header_row.addWidget(add_btn)
-
         outer.addLayout(header_row)
 
         self.profile_bar = ProfileBar()
-        self.profile_bar.set_add_handler(self._add_profile)
+        self.profile_bar.add_requested.connect(self._add_profile)
         self.profile_bar.profile_changed.connect(self._switch_profile)
         self.profile_bar.manage_requested.connect(self._open_profile_manager)
         outer.addWidget(self.profile_bar)
@@ -731,12 +668,16 @@ class MainWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
         self.grid_container = QWidget()
-        self.grid_container.setStyleSheet("background: transparent;")
+        self.grid_container.setAutoFillBackground(False)
         self.grid = QGridLayout(self.grid_container)
-        self.grid.setSpacing(16)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(0)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(self.grid_container)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)
 
         self._refresh_profile_bar()
         self._render_buttons()
@@ -759,12 +700,15 @@ class MainWindow(QMainWindow):
 
         profile = self._active_profile()
         buttons = profile.get("buttons", [])
+        columns = max(1, profile.get("columns", 4))
+
         if not buttons:
-            empty = QWidget()
-            box = QVBoxLayout(empty)
+            panel = GlassPanel(radius=28)
+            panel.setMinimumHeight(240)
+            box = QVBoxLayout(panel)
             box.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon = QLabel("🎛️")
-            icon.setStyleSheet("font-size: 48px;")
+            icon.setStyleSheet("font-size: 52px;")
             icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
             t = QLabel("Belum ada tombol di profile ini")
             t.setObjectName("EmptyTitle")
@@ -775,15 +719,16 @@ class MainWindow(QMainWindow):
             box.addWidget(icon)
             box.addWidget(t)
             box.addWidget(s)
-            self.grid.addWidget(empty, 0, 0)
+            self.grid.addWidget(panel, 0, 0, 1, columns)
             return
 
-        columns = profile.get("columns", 4)
         for index, button_data in enumerate(buttons):
             deck_btn = DeckButton(button_data)
             deck_btn.clicked.connect(lambda checked=False, b=button_data: self._on_button_clicked(b))
             row, col = divmod(index, columns)
             self.grid.addWidget(deck_btn, row, col)
+        for c in range(columns):
+            self.grid.setColumnStretch(c, 1)
 
     def _set_edit_mode(self, is_edit: bool):
         self.edit_mode = is_edit
@@ -805,7 +750,10 @@ class MainWindow(QMainWindow):
         if profile_id == self.config["active_profile"]:
             return
         self.config["active_profile"] = profile_id
-        self._save_and_refresh()
+        config_manager.save_config(self.config)
+        # tab sudah beranimasi sendiri; cukup ganti isi grid & hotkey
+        self._render_buttons()
+        self._register_all_hotkeys()
 
     def _open_profile_manager(self):
         dialog = ProfileManagerDialog(self.config["profiles"], self)

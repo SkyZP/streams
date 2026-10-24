@@ -1,136 +1,112 @@
 """
 styles.py
-Tema "glass dashboard" — pill nav melengkung, kartu kaca, glow lembut,
-terinspirasi dari referensi dashboard modern.
+QSS untuk elemen standar (teks, kolom input, slider, scrollbar, dialog bawaan).
+Panel, tombol, tab, dan toggle TIDAK memakai QSS: semuanya digambar manual di
+modules/glass.py supaya bisa memakai efek Liquid Glass.
 """
 
 DARK_THEME = """
 QWidget {
     font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
     font-size: 13px;
-    color: #e8eaf2;
+    color: #f2f4ff;
 }
-QMainWindow, QDialog { background: #0b0c11; }
-#Root { background: #0b0c11; }
 QLabel { background: transparent; }
 
-#Title { font-size: 26px; font-weight: 700; color: #ffffff; }
-#Subtitle { color: #7d8299; font-size: 12px; }
-#Hint { color: #6b7088; font-size: 12px; }
-#DialogTitle { font-size: 18px; font-weight: 700; color: #ffffff; }
-#FieldLabel { color: #8b90a8; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding-top: 6px; }
-#EmptyTitle { font-size: 18px; font-weight: 700; color: #ffffff; }
-#EmptyText { color: #7d8299; font-size: 13px; }
+#Title { font-size: 30px; font-weight: 700; color: #ffffff; }
+#Subtitle { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+#Hint { color: rgba(255, 255, 255, 0.45); font-size: 12px; }
+#DialogTitle { font-size: 20px; font-weight: 700; color: #ffffff; padding-bottom: 6px; }
+#FieldLabel { color: rgba(255, 255, 255, 0.55); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+#EmptyTitle { font-size: 19px; font-weight: 700; color: #ffffff; }
+#EmptyText { color: rgba(255, 255, 255, 0.55); font-size: 13px; }
 
-/* Kartu kaca umum (nav pill, dialog panel, dsb) */
-#GlassPill {
-    background: rgba(255, 255, 255, 0.045);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 22px;
-}
-#GlassCard {
-    background: rgba(255, 255, 255, 0.035);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 20px;
-}
-
-QPushButton {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    padding: 9px 16px;
-}
-QPushButton:hover { background: rgba(255, 255, 255, 0.11); }
-QPushButton:pressed { background: rgba(255, 255, 255, 0.04); }
-QPushButton:disabled { color: #6b7088; }
-
-#Primary {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6470ff, stop:1 #8b5cf6);
-    border: none;
-    color: #ffffff;
-    font-weight: 600;
-    padding: 10px 20px;
-    border-radius: 16px;
-}
-#Primary:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7883ff, stop:1 #9d75f8);
-}
-#Primary:pressed {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #535ee8, stop:1 #7c4ce6);
-}
-
-/* Item dalam pill nav (profile tabs, segmented toggle) */
-#NavItem {
-    background: transparent;
-    border: none;
-    border-radius: 16px;
-    padding: 8px 16px;
-    color: #9095ac;
-    font-weight: 600;
-}
-#NavItem:hover { color: #e8eaf2; }
-#NavItem:checked {
-    background: #ffffff;
-    color: #12131a;
-}
-#NavItemAccent:checked {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6470ff, stop:1 #8b5cf6);
-    color: #ffffff;
-}
-#NavAdd {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px dashed rgba(255, 255, 255, 0.25);
-    border-radius: 16px;
-    color: #c8cbe0;
-    font-weight: 700;
-    padding: 8px 14px;
-}
-#NavAdd:hover { background: rgba(255, 255, 255, 0.14); }
-
-#Danger {
-    background: rgba(237, 66, 69, 0.14);
-    border: 1px solid rgba(237, 66, 69, 0.45);
-    color: #ff8f91;
-    border-radius: 14px;
-}
-#Danger:hover { background: rgba(237, 66, 69, 0.25); }
-
+/* Kolom input kaca */
 QLineEdit {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 12px;
-    padding: 9px 12px;
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.17);
+    border-radius: 16px;
+    padding: 10px 16px;
     selection-background-color: #6470ff;
 }
-QLineEdit:focus { border: 1px solid #6470ff; }
-QLineEdit:read-only { color: #b6bbd0; }
+QLineEdit:focus {
+    background: rgba(255, 255, 255, 0.11);
+    border: 1px solid rgba(160, 170, 255, 0.85);
+}
+QLineEdit:read-only { color: rgba(255, 255, 255, 0.75); }
 
 QComboBox {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 12px;
-    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.17);
+    border-radius: 16px;
+    padding: 9px 16px;
 }
+QComboBox:hover { background: rgba(255, 255, 255, 0.11); }
+QComboBox::drop-down { border: none; width: 28px; }
 QComboBox QAbstractItemView {
-    background: #171923;
-    border: 1px solid rgba(255,255,255,0.1);
-    selection-background-color: #6470ff;
-    border-radius: 8px;
+    background: #171926;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 4px;
+    selection-background-color: rgba(112, 100, 255, 0.55);
+    outline: none;
 }
 
-QSlider::groove:horizontal { height: 6px; background: rgba(255, 255, 255, 0.10); border-radius: 3px; }
-QSlider::sub-page:horizontal { background: #6470ff; border-radius: 3px; }
-QSlider::handle:horizontal { background: #ffffff; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }
+/* Slider kaca */
+QSlider::groove:horizontal {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 4px;
+}
+QSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6470ff, stop:1 #a78bfa);
+    border-radius: 4px;
+}
+QSlider::handle:horizontal {
+    background: qradialgradient(cx:0.4, cy:0.35, radius:0.8, fx:0.35, fy:0.3,
+        stop:0 #ffffff, stop:1 #cfd3ff);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    width: 20px;
+    height: 20px;
+    margin: -7px 0;
+    border-radius: 11px;
+}
 
+/* Scrollbar */
 QScrollArea { border: none; background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
-QScrollBar:horizontal { background: transparent; height: 8px; margin: 2px; }
-QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-    background: rgba(255, 255, 255, 0.16); border-radius: 4px; min-height: 30px; min-width: 30px;
+QScrollBar::handle:vertical {
+    background: rgba(255, 255, 255, 0.20);
+    border-radius: 4px;
+    min-height: 30px;
 }
-QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: rgba(255, 255, 255, 0.28); }
-QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QScrollBar::handle:vertical:hover { background: rgba(255, 255, 255, 0.34); }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 
-QToolTip { background: #1c1f2e; color: #e8eaf2; border: 1px solid #2c3046; padding: 4px 8px; }
+/* Dialog bawaan Qt (konfirmasi hapus, input nama profile) */
+QMessageBox, QInputDialog { background: #12131c; }
+QMessageBox QPushButton, QInputDialog QPushButton {
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 14px;
+    padding: 8px 20px;
+    min-width: 70px;
+}
+QMessageBox QPushButton:hover, QInputDialog QPushButton:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+QMessageBox QPushButton:default, QInputDialog QPushButton:default {
+    background: #6470ff;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+QToolTip {
+    background: #1c1f2e;
+    color: #f2f4ff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 4px 8px;
+}
 """
