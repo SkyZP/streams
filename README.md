@@ -19,8 +19,7 @@ disusun di lingkungan Linux tanpa akses ke toolchain Windows.
 
 Kabar baiknya: prosesnya sudah disiapkan otomatis lewat `build.bat`. Kamu
 tinggal jalankan satu file itu di PC Windows-mu, dan hasilnya adalah **file
-`.exe` portable** — tinggal double klik, tanpa instalasi, tanpa registry,
-persis seperti yang kamu minta.
+`.exe` portable** — tinggal double klik, tanpa instalasi, tanpa registry
 
 ## Cara build jadi .exe
 
