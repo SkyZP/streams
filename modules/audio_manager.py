@@ -15,6 +15,7 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 class AudioManager(QObject):
     def __init__(self):
         super().__init__()
+        self.master_volume = 1.0
         self._active = []  # simpan referensi entry supaya tidak di-GC saat masih main
 
     def play(self, file_path: str, volume: float = 1.0, start_ms: int = 0, end_ms=None):
@@ -28,7 +29,7 @@ class AudioManager(QObject):
 
         player = QMediaPlayer()
         output = QAudioOutput()
-        output.setVolume(max(0.0, min(1.0, volume)))
+        output.setVolume(max(0.0, min(1.0, volume * self.master_volume)))
         player.setAudioOutput(output)
 
         entry = {"player": player, "output": output, "done": False, "started": False}

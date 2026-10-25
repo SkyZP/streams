@@ -9,12 +9,14 @@ DARK_THEME = """
 QWidget {
     font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
     font-size: 13px;
-    color: #f2f4ff;
+    color: #f4f4f5;
 }
 QLabel { background: transparent; }
 
-#Title { font-size: 30px; font-weight: 700; color: #ffffff; }
+#Title { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
 #Subtitle { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+#Status { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+#SectionTitle { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.45); padding-top: 8px; }
 #Hint { color: rgba(255, 255, 255, 0.45); font-size: 12px; }
 #DialogTitle { font-size: 20px; font-weight: 700; color: #ffffff; padding-bottom: 6px; }
 #FieldLabel { color: rgba(255, 255, 255, 0.55); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
@@ -27,11 +29,11 @@ QLineEdit {
     border: 1px solid rgba(255, 255, 255, 0.17);
     border-radius: 16px;
     padding: 10px 16px;
-    selection-background-color: #6470ff;
+    selection-background-color: rgba(255, 255, 255, 0.30);
 }
 QLineEdit:focus {
     background: rgba(255, 255, 255, 0.11);
-    border: 1px solid rgba(160, 170, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.55);
 }
 QLineEdit:read-only { color: rgba(255, 255, 255, 0.75); }
 
@@ -44,11 +46,11 @@ QComboBox {
 QComboBox:hover { background: rgba(255, 255, 255, 0.11); }
 QComboBox::drop-down { border: none; width: 28px; }
 QComboBox QAbstractItemView {
-    background: #171926;
+    background: #141416;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 12px;
     padding: 4px;
-    selection-background-color: rgba(112, 100, 255, 0.55);
+    selection-background-color: rgba(255, 255, 255, 0.18);
     outline: none;
 }
 
@@ -60,12 +62,12 @@ QSlider::groove:horizontal {
     border-radius: 4px;
 }
 QSlider::sub-page:horizontal {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6470ff, stop:1 #a78bfa);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(255,255,255,0.55), stop:1 rgba(255,255,255,0.85));
     border-radius: 4px;
 }
 QSlider::handle:horizontal {
     background: qradialgradient(cx:0.4, cy:0.35, radius:0.8, fx:0.35, fy:0.3,
-        stop:0 #ffffff, stop:1 #cfd3ff);
+        stop:0 #ffffff, stop:1 #d6d6d6);
     border: 1px solid rgba(255, 255, 255, 0.85);
     width: 20px;
     height: 20px;
@@ -87,7 +89,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 
 /* Dialog bawaan Qt (konfirmasi hapus, input nama profile) */
-QMessageBox, QInputDialog { background: #12131c; }
+QMessageBox, QInputDialog { background: #0e0e10; }
 QMessageBox QPushButton, QInputDialog QPushButton {
     background: rgba(255, 255, 255, 0.10);
     border: 1px solid rgba(255, 255, 255, 0.22);
@@ -99,13 +101,13 @@ QMessageBox QPushButton:hover, QInputDialog QPushButton:hover {
     background: rgba(255, 255, 255, 0.18);
 }
 QMessageBox QPushButton:default, QInputDialog QPushButton:default {
-    background: #6470ff;
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.45);
 }
 
 QToolTip {
-    background: #1c1f2e;
-    color: #f2f4ff;
+    background: #1a1a1d;
+    color: #f4f4f5;
     border: 1px solid rgba(255, 255, 255, 0.18);
     padding: 4px 8px;
 }

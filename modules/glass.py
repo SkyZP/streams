@@ -1,16 +1,11 @@
 """
 glass.py
-Komponen visual bergaya "Liquid Glass" untuk StreamPad.
+Komponen visual bergaya kaca bening (monokrom) untuk StreamPad.
 
-Catatan teknis: Qt tidak bisa mem-blur isi desktop/jendela lain di belakang
-window aplikasi. Jadi efek kaca di sini DISIMULASIKAN: background aplikasi
-berupa gumpalan warna yang bergerak pelan (seperti cairan), lalu semua
-panel/tombol digambar semi-transparan di atasnya dengan:
-  - isian gradasi tipis (kaca),
-  - kilau spekular di bagian atas,
-  - pantulan cahaya lembut di bagian bawah,
-  - garis tepi (rim) terang di sudut atas-kiri & bawah-kanan,
-  - glow berwarna saat hover.
+Qt tidak bisa mem-blur isi desktop di belakang window, jadi efeknya
+disimulasikan: background aplikasi berupa gumpalan putih/abu yang di-blur
+di atas hitam, lalu semua panel/tombol digambar transparan (hampir bening)
+dengan kilau tipis di atas dan garis tepi halus. Tanpa warna-warni.
 """
 import math
 
@@ -23,7 +18,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget, QPushButton, QDialog
 
-ACCENT = QColor(100, 112, 255)
+ACCENT = QColor(255, 255, 255)
 
 
 def _a(value) -> int:
@@ -60,35 +55,36 @@ class Tween(QVariantAnimation):
 
 
 # ------------------------------------------------------------------ Painting helpers
-# (cx, cy, radius_factor, (r, g, b), amplitudo_x, amplitudo_y, kecepatan)
+# (cx, cy, radius_factor, gray, alpha, amplitudo_x, amplitudo_y, kecepatan)
 _BLOBS = [
-    (0.10, 0.08, 0.60, (100, 112, 255), 0.06, 0.05, 1.0),
-    (0.90, 0.20, 0.55, (168, 85, 247), 0.05, 0.07, 0.8),
-    (0.72, 0.95, 0.65, (236, 72, 153), 0.07, 0.04, 1.2),
-    (0.18, 0.88, 0.50, (34, 211, 238), 0.05, 0.06, 0.9),
+    (0.12, 0.10, 0.62, 255, 46, 0.06, 0.05, 1.0),
+    (0.92, 0.22, 0.55, 205, 34, 0.05, 0.07, 0.8),
+    (0.70, 0.98, 0.68, 255, 40, 0.07, 0.04, 1.2),
+    (0.16, 0.92, 0.50, 170, 34, 0.05, 0.06, 0.9),
 ]
 
 
 def paint_liquid_backdrop(p: QPainter, rect, phase: float):
-    """Gambar background gelap + gumpalan warna yang bergeser pelan mengikuti `phase`."""
-    p.fillRect(rect, QColor(8, 9, 14))
+    """Background hitam dengan gumpalan putih/abu yang di-blur dan bergeser pelan."""
+    p.fillRect(rect, QColor(9, 9, 11))
     w = float(rect.width())
     h = float(rect.height())
     base = max(w, h)
-    for cx, cy, rf, col, ax, ay, speed in _BLOBS:
+    for cx, cy, rf, g, alpha, ax, ay, speed in _BLOBS:
         x = (cx + ax * math.sin(phase * speed)) * w
         y = (cy + ay * math.cos(phase * speed * 1.3)) * h
         grad = QRadialGradient(QPointF(x, y), rf * base)
-        grad.setColorAt(0.0, QColor(col[0], col[1], col[2], 125))
-        grad.setColorAt(0.5, QColor(col[0], col[1], col[2], 42))
-        grad.setColorAt(1.0, QColor(col[0], col[1], col[2], 0))
+        grad.setColorAt(0.0, QColor(g, g, g, alpha))
+        grad.setColorAt(0.5, QColor(g, g, g, int(alpha * 0.35)))
+        grad.setColorAt(1.0, QColor(g, g, g, 0))
         p.fillRect(rect, QBrush(grad))
 
 
 def paint_glass(p: QPainter, rect: QRectF, radius: float, tint=None, strength=1.0, rim=1.0):
     """
-    Gambar satu permukaan kaca. `tint` (QColor) memberi warna pada kaca;
-    `strength` mengatur keburaman/ketebalan; `rim` mengatur terang garis tepi.
+    Satu permukaan kaca bening. `tint` hanya dipakai untuk aksen halus
+    (tombol hapus = kemerahan); selain itu kaca selalu netral putih.
+    `strength` mengatur ketebalan, `rim` mengatur terang garis tepi.
     """
     if strength <= 0.001:
         return
@@ -98,53 +94,42 @@ def paint_glass(p: QPainter, rect: QRectF, radius: float, tint=None, strength=1.
     path = QPainterPath()
     path.addRoundedRect(rect, radius, radius)
 
-    # 1) isian dasar
+    # 1) isian dasar: hampir bening
     fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
     if tint is None:
-        fill.setColorAt(0.0, QColor(255, 255, 255, _a(36 * strength)))
-        fill.setColorAt(1.0, QColor(255, 255, 255, _a(13 * strength)))
+        fill.setColorAt(0.0, QColor(255, 255, 255, _a(26 * strength)))
+        fill.setColorAt(1.0, QColor(255, 255, 255, _a(10 * strength)))
     else:
-        top = QColor(tint)
-        top.setAlpha(_a(105 * strength))
-        bottom = QColor(tint).darker(150)
-        bottom.setAlpha(_a(165 * strength))
-        fill.setColorAt(0.0, top)
-        fill.setColorAt(1.0, bottom)
+        fill.setColorAt(0.0, QColor(tint.red(), tint.green(), tint.blue(), _a(52 * strength)))
+        fill.setColorAt(1.0, QColor(tint.red(), tint.green(), tint.blue(), _a(26 * strength)))
     p.fillPath(path, QBrush(fill))
 
     p.setClipPath(path)
 
-    # 2) kilau spekular di bagian atas
-    hl_rect = QRectF(rect.left(), rect.top(), rect.width(), rect.height() * 0.56)
+    # 2) kilau tipis di bagian atas
+    hl_rect = QRectF(rect.left(), rect.top(), rect.width(), rect.height() * 0.45)
     hl = QLinearGradient(hl_rect.topLeft(), hl_rect.bottomLeft())
-    hl.setColorAt(0.0, QColor(255, 255, 255, _a(78 * strength)))
+    hl.setColorAt(0.0, QColor(255, 255, 255, _a(34 * strength)))
     hl.setColorAt(1.0, QColor(255, 255, 255, 0))
     p.fillRect(hl_rect, QBrush(hl))
 
-    # 3) pantulan lembut di bagian bawah
-    bl_rect = QRectF(rect.left(), rect.bottom() - rect.height() * 0.38, rect.width(), rect.height() * 0.38)
-    bl = QLinearGradient(bl_rect.bottomLeft(), bl_rect.topLeft())
-    bl.setColorAt(0.0, QColor(255, 255, 255, _a(26 * strength)))
-    bl.setColorAt(1.0, QColor(255, 255, 255, 0))
-    p.fillRect(bl_rect, QBrush(bl))
-
     p.setClipping(False)
 
-    # 4) garis tepi (rim) terang di dua sudut berlawanan
+    # 3) garis tepi halus
     rim_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    rim_grad.setColorAt(0.00, QColor(255, 255, 255, _a(185 * rim)))
-    rim_grad.setColorAt(0.35, QColor(255, 255, 255, _a(42 * rim)))
-    rim_grad.setColorAt(0.65, QColor(255, 255, 255, _a(28 * rim)))
-    rim_grad.setColorAt(1.00, QColor(255, 255, 255, _a(130 * rim)))
-    p.setPen(QPen(QBrush(rim_grad), 1.2))
+    rim_grad.setColorAt(0.00, QColor(255, 255, 255, _a(120 * rim)))
+    rim_grad.setColorAt(0.40, QColor(255, 255, 255, _a(34 * rim)))
+    rim_grad.setColorAt(0.65, QColor(255, 255, 255, _a(26 * rim)))
+    rim_grad.setColorAt(1.00, QColor(255, 255, 255, _a(80 * rim)))
+    p.setPen(QPen(QBrush(rim_grad), 1.0))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(rect.adjusted(0.6, 0.6, -0.6, -0.6), radius, radius)
+    p.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
     p.restore()
 
 
 def paint_glow(p: QPainter, body: QRectF, radius: float, color: QColor, amount: float,
                steps: int = 7, spread: float = 1.6):
-    """Cahaya berwarna lembut di sekeliling `body` (dibutuhkan margin >= steps*spread)."""
+    """Cahaya lembut di sekeliling `body` (dibutuhkan margin >= steps*spread)."""
     if amount <= 0.01:
         return
     p.save()
@@ -152,10 +137,44 @@ def paint_glow(p: QPainter, body: QRectF, radius: float, color: QColor, amount: 
     p.setBrush(Qt.BrushStyle.NoBrush)
     for i in range(1, steps + 1):
         falloff = (1.0 - i / (steps + 1.0)) ** 2
-        c = QColor(color.red(), color.green(), color.blue(), _a(amount * 46 * falloff))
+        c = QColor(color.red(), color.green(), color.blue(), _a(amount * 30 * falloff))
         p.setPen(QPen(c, spread * 1.3))
         grow = i * spread
         p.drawRoundedRect(body.adjusted(-grow, -grow, grow, grow), radius + grow, radius + grow)
+    p.restore()
+
+
+def draw_icon(p: QPainter, kind: str, rect: QRectF, color: QColor, width: float = 2.0):
+    """Ikon garis monokrom: 'sound' (speaker), 'app' (grid 2x2), 'pad' (grid 4 kotak)."""
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+    if kind == "sound":
+        sp = QPainterPath()
+        sp.moveTo(x + w * 0.10, y + h * 0.38)
+        sp.lineTo(x + w * 0.30, y + h * 0.38)
+        sp.lineTo(x + w * 0.52, y + h * 0.18)
+        sp.lineTo(x + w * 0.52, y + h * 0.82)
+        sp.lineTo(x + w * 0.30, y + h * 0.62)
+        sp.lineTo(x + w * 0.10, y + h * 0.62)
+        sp.closeSubpath()
+        p.drawPath(sp)
+        p.drawArc(QRectF(x + w * 0.42, y + h * 0.30, w * 0.26, h * 0.40), -60 * 16, 120 * 16)
+        p.drawArc(QRectF(x + w * 0.42, y + h * 0.14, w * 0.46, h * 0.72), -60 * 16, 120 * 16)
+    else:
+        gap = w * 0.10
+        cell = (min(w, h) - gap) / 2.0
+        ox = x + (w - (cell * 2 + gap)) / 2.0
+        oy = y + (h - (cell * 2 + gap)) / 2.0
+        for r in range(2):
+            for c in range(2):
+                cr = QRectF(ox + c * (cell + gap), oy + r * (cell + gap), cell, cell)
+                p.drawRoundedRect(cr, cell * 0.28, cell * 0.28)
     p.restore()
 
 
@@ -166,12 +185,19 @@ class LiquidBackground(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._phase = 0.0
+        self._animate = True
         self._timer = QTimer(self)
-        self._timer.setInterval(45)
+        self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
 
+    def set_animated(self, value: bool):
+        self._animate = bool(value)
+        self.update()
+
     def _tick(self):
+        if not self._animate:
+            return
         win = self.window()
         if win is None or win.isMinimized() or not win.isVisible():
             return
@@ -214,10 +240,8 @@ class GlassPillButton(QPushButton):
         return QSize(max(48, fm.horizontalAdvance(self.text()) + 44), 44)
 
     def _tint(self):
-        if self.variant == "primary":
-            return QColor(112, 100, 255)
         if self.variant == "danger":
-            return QColor(237, 66, 69)
+            return QColor(255, 99, 99)
         return None
 
     def enterEvent(self, event):
@@ -249,17 +273,19 @@ class GlassPillButton(QPushButton):
         enabled = self.isEnabled()
         hover = self._hover.current
 
-        if tint is not None and enabled:
-            paint_glow(p, body, radius, tint, 0.25 + 0.75 * hover, steps=3, spread=1.3)
-        base = 1.0 if tint is not None else 0.9
-        strength = (base + 0.4 * hover) if enabled else 0.65
-        paint_glass(p, body, radius, tint, strength)
+        primary = self.variant == "primary"
+        if enabled and (primary or hover > 0.01):
+            paint_glow(p, body, radius, QColor(255, 255, 255), (0.35 if primary else 0.0) + 0.65 * hover,
+                       steps=3, spread=1.3)
+        base = 1.9 if primary else 1.0
+        strength = (base + 0.7 * hover) if enabled else 0.6
+        paint_glass(p, body, radius, tint, strength, rim=1.25 if primary else 1.0)
 
         font = QFont(self.font())
         font.setPixelSize(13)
         font.setWeight(QFont.Weight.DemiBold)
         p.setFont(font)
-        p.setPen(QColor(255, 255, 255, 240 if enabled else 170))
+        p.setPen(QColor(255, 255, 255, 245 if enabled else 130))
         p.drawText(body, Qt.AlignmentFlag.AlignCenter, self.text())
 
 
@@ -304,8 +330,7 @@ class GlassTab(QPushButton):
         hover = self._hover.current
 
         if sel > 0.01:
-            paint_glow(p, body, radius, ACCENT, 0.5 * sel, steps=2, spread=1.0)
-            paint_glass(p, body, radius, QColor(124, 131, 255), sel * 1.15)
+            paint_glass(p, body, radius, None, sel * 1.9, rim=1.2)
         elif hover > 0.01:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(255, 255, 255, _a(20 * hover)))
@@ -323,19 +348,21 @@ class GlassTab(QPushButton):
 # ------------------------------------------------------------------ Liquid toggle
 class GlassToggle(QWidget):
     """
-    Toggle dua sisi (Jalankan / Edit). Thumb kaca meluncur dengan efek cairan:
-    melar saat bergerak lalu 'memantul' sedikit saat berhenti.
+    Toggle dua sisi (Jalankan / Edit). Thumb kaca meluncur dengan efek cairan
+    (sedikit melar saat bergerak). Semua gambar dijaga di dalam batas widget
+    supaya tidak pernah terpotong.
     """
     toggled = Signal(bool)  # True = sisi kanan (edit)
+    MARGIN = 4
 
     def __init__(self, left_text="▶  Jalankan", right_text="✎  Edit", parent=None):
         super().__init__(parent)
         self.left_text = left_text
         self.right_text = right_text
         self._index = 0
-        self.setFixedSize(236, 48)
+        self.setFixedSize(252, 56)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._pos = Tween(self, 520, QEasingCurve.Type.OutBack, initial=0.0)
+        self._pos = Tween(self, 380, QEasingCurve.Type.InOutCubic, initial=0.0)
 
     def index(self) -> int:
         return self._index
@@ -354,33 +381,82 @@ class GlassToggle(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        full = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        paint_glass(p, full, full.height() / 2.0, None, 0.95)
+        m = self.MARGIN
+        full = QRectF(self.rect()).adjusted(m, m, -m, -m)
+        paint_glass(p, full, full.height() / 2.0, None, 1.0)
 
-        pad = 5.0
-        seg_w = (full.width() - 2 * pad) / 2.0
-        th = full.height() - 2 * pad
-        pos = self._pos.current
+        pad = 4.0
+        inner = full.adjusted(pad, pad, -pad, -pad)
+        seg_w = inner.width() / 2.0
+        pos = max(0.0, min(1.0, self._pos.current))
         stretch = max(0.0, 4.0 * pos * (1.0 - pos))  # 0 di ujung, 1 di tengah gerakan
-        extra = seg_w * 0.30 * stretch
-        squish = th * 0.10 * stretch
+        extra = seg_w * 0.22 * stretch
 
-        x = full.left() + pad + pos * seg_w - extra / 2.0
-        thumb = QRectF(x, full.top() + pad + squish / 2.0, seg_w + extra, th - squish)
-        paint_glow(p, thumb, thumb.height() / 2.0, ACCENT, 0.7, steps=3, spread=1.4)
-        paint_glass(p, thumb, thumb.height() / 2.0, QColor(112, 100, 255), 1.55)
+        left = inner.left() + pos * seg_w - extra * pos
+        right = inner.left() + (pos + 1.0) * seg_w + extra * (1.0 - pos)
+        thumb = QRectF(max(inner.left(), left), inner.top(),
+                       min(inner.right(), right) - max(inner.left(), left), inner.height())
+        paint_glass(p, thumb, thumb.height() / 2.0, None, 2.2, rim=1.3)
 
         font = QFont(self.font())
         font.setPixelSize(13)
         font.setWeight(QFont.Weight.DemiBold)
         p.setFont(font)
-        left_rect = QRectF(full.left() + pad, full.top() + pad, seg_w, th)
-        right_rect = QRectF(full.left() + pad + seg_w, full.top() + pad, seg_w, th)
-        clamp = max(0.0, min(1.0, pos))
-        p.setPen(QColor(255, 255, 255, _a(255 - 110 * clamp)))
+        left_rect = QRectF(inner.left(), inner.top(), seg_w, inner.height())
+        right_rect = QRectF(inner.left() + seg_w, inner.top(), seg_w, inner.height())
+        p.setPen(QColor(255, 255, 255, _a(255 - 115 * pos)))
         p.drawText(left_rect, Qt.AlignmentFlag.AlignCenter, self.left_text)
-        p.setPen(QColor(255, 255, 255, _a(145 + 110 * clamp)))
+        p.setPen(QColor(255, 255, 255, _a(140 + 115 * pos)))
         p.drawText(right_rect, Qt.AlignmentFlag.AlignCenter, self.right_text)
+
+
+# ------------------------------------------------------------------ Switch
+class GlassSwitch(QWidget):
+    """Saklar on/off kecil bergaya kaca."""
+    toggled = Signal(bool)
+
+    def __init__(self, checked=False, parent=None):
+        super().__init__(parent)
+        self._checked = bool(checked)
+        self.setFixedSize(54, 32)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pos = Tween(self, 200, QEasingCurve.Type.OutCubic, initial=1.0 if checked else 0.0)
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, value: bool):
+        self._checked = bool(value)
+        self._pos.go(1.0 if value else 0.0)
+
+    def mousePressEvent(self, event):
+        self.setChecked(not self._checked)
+        self.toggled.emit(self._checked)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        body = QRectF(self.rect()).adjusted(2, 4, -2, -4)
+        pos = self._pos.current
+        paint_glass(p, body, body.height() / 2.0, None, 1.0 + 1.2 * pos)
+        d = body.height() - 6
+        x = body.left() + 3 + pos * (body.width() - d - 6)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(255, 255, 255, _a(150 + 100 * pos)))
+        p.drawEllipse(QRectF(x, body.top() + 3, d, d))
+
+
+# ------------------------------------------------------------------ Icon widget
+class IconWidget(QWidget):
+    def __init__(self, kind="pad", size=56, parent=None):
+        super().__init__(parent)
+        self._kind = kind
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        draw_icon(p, self._kind, QRectF(self.rect()).adjusted(4, 4, -4, -4),
+                  QColor(255, 255, 255, 200), 2.2)
 
 
 # ------------------------------------------------------------------ Dialog
@@ -390,7 +466,7 @@ class GlassDialog(QDialog):
     def paintEvent(self, event):
         p = QPainter(self)
         paint_liquid_backdrop(p, self.rect(), 1.7)
-        paint_glass(p, QRectF(self.rect()).adjusted(1, 1, -1, -1), 6, None, 0.55, rim=0.7)
+        paint_glass(p, QRectF(self.rect()).adjusted(1, 1, -1, -1), 6, None, 0.5, rim=0.6)
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -16,7 +16,41 @@ def get_app_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-CONFIG_PATH = os.path.join(get_app_dir(), "config.json")
+DEFAULT_SETTINGS = {
+    "master_volume": 1.0,      # pengali volume untuk semua suara (0.0 - 1.0)
+    "animate_background": True,
+}
+
+
+def _is_writable_dir(path: str) -> bool:
+    try:
+        probe = os.path.join(path, ".streampad_write_test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        return True
+    except Exception:
+        return False
+
+
+def _resolve_config_path() -> str:
+    """
+    config.json disimpan di sebelah aplikasi (portable). Kalau foldernya tidak
+    bisa ditulis (misal .exe dijalankan langsung dari dalam file .zip atau
+    folder read-only), otomatis pindah ke %APPDATA%\\StreamPad supaya
+    pengaturan tetap tersimpan.
+    """
+    app_dir = get_app_dir()
+    local = os.path.join(app_dir, "config.json")
+    if _is_writable_dir(app_dir):
+        return local
+    base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    fallback_dir = os.path.join(base, "StreamPad")
+    os.makedirs(fallback_dir, exist_ok=True)
+    return os.path.join(fallback_dir, "config.json")
+
+
+CONFIG_PATH = _resolve_config_path()
 
 
 def new_profile(name: str) -> dict:
@@ -25,7 +59,8 @@ def new_profile(name: str) -> dict:
 
 def _default_config() -> dict:
     profile = new_profile("Profile 1")
-    return {"active_profile": profile["id"], "profiles": [profile]}
+    return {"active_profile": profile["id"], "profiles": [profile],
+            "settings": dict(DEFAULT_SETTINGS)}
 
 
 def load_config() -> dict:
@@ -48,18 +83,45 @@ def _migrate(data: dict) -> dict:
             p.setdefault("columns", 4)
             p.setdefault("buttons", [])
         data.setdefault("active_profile", data["profiles"][0]["id"])
+        settings = dict(DEFAULT_SETTINGS)
+        settings.update(data.get("settings") or {})
+        data["settings"] = settings
         return data
     if "buttons" in data:
         profile = new_profile("Profile 1")
         profile["columns"] = data.get("columns", 4)
         profile["buttons"] = data.get("buttons", [])
-        return {"active_profile": profile["id"], "profiles": [profile]}
+        return {"active_profile": profile["id"], "profiles": [profile],
+                "settings": dict(DEFAULT_SETTINGS)}
     return _default_config()
 
 
-def save_config(config: dict):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+def save_config(config: dict) -> bool:
+    """Simpan ke config.json. Mengembalikan True kalau berhasil."""
+    try:
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, CONFIG_PATH)
+        return True
+    except Exception as e:
+        print(f"Gagal menyimpan config: {e}")
+        return False
+
+
+def export_config(config: dict, path: str):
+    """Tulis salinan config ke file pilihan user (misal config.json di Desktop)."""
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
+
+
+def import_config(path: str) -> dict:
+    """Baca config.json dari file lain. Melempar Exception kalau formatnya salah."""
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not ("profiles" in data or "buttons" in data):
+        raise ValueError("File ini bukan config StreamPad yang valid.")
+    return _migrate(data)
 
 
 def get_active_profile(config: dict) -> dict:
@@ -73,7 +135,7 @@ def new_button(button_id: str) -> dict:
     return {
         "id": button_id,
         "label": "Tombol Baru",
-        "color": "#6470ff",
+        "color": "#ffffff",
         "action_type": "sound",  # sound | app
         "sound_path": "",
         "sound_volume": 1.0,
