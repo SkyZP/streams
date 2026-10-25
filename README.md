@@ -1,9 +1,10 @@
 # StreamPad
 
 Aplikasi soundboard & macro deck ala Stream Deck, dibuat untuk dipakai bareng
-macropad **DumbPad** (QMK). Tampilan **Liquid Glass**: background cair yang
-bergerak pelan, panel & tombol kaca dengan kilau dan garis tepi terang, glow
-berwarna saat hover, toggle yang meluncur seperti cairan, dan dialog fade-in.
+macropad **DumbPad** (QMK). Tampilan **kaca bening monokrom**: background
+hitam-putih blur, panel & tombol transparan, toggle yang meluncur halus, dan
+dialog fade-in. Pengaturan (⚙) berisi jumlah kolom, volume utama, Simpan,
+**Export / Import config.json**, dan Kelola Profile.
 Portable (tanpa installer). Setiap tombol punya dua
 pilihan aksi saja — **Putar Suara** atau **Buka Aplikasi** — biar tetap
 simpel dan gampang dikombinasikan dengan software lain yang sudah kamu
