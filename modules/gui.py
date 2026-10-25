@@ -1,14 +1,13 @@
 """
 gui.py
 Antarmuka StreamPad bergaya Liquid Glass: background cair yang bergerak
-pelan, panel & tombol kaca dengan kilau dan rim terang, tombol export,
-plus sistem Profile dan potong durasi suara.
+pelan, panel & tombol kaca dengan kilau dan rim terang, toggle yang
+meluncur seperti cairan, plus sistem Profile dan potong durasi suara.
 """
 import os
 import subprocess
 import sys
 import uuid
-import json
 
 from PySide6.QtCore import Qt, Signal, QUrl, QRectF, QSize
 from PySide6.QtGui import QColor, QPainter, QFont, QFontMetrics
@@ -25,7 +24,7 @@ from modules.audio_manager import AudioManager
 from modules.hotkey_manager import HotkeyManager
 from modules.glass import (
     Tween, paint_glass, paint_glow, LiquidBackground, GlassPanel,
-    GlassPillButton, GlassTab, GlassDialog
+    GlassPillButton, GlassTab, GlassToggle, GlassDialog
 )
 
 ACTION_LABELS = {"sound": "Putar Suara", "app": "Buka Aplikasi"}
@@ -223,6 +222,7 @@ class HotkeyCaptureButton(GlassPillButton):
     def _start_capture(self):
         self.setText("Menunggu... tekan tombolnya")
         self.setEnabled(False)
+        # callback datang dari thread library keyboard -> lewat signal ke thread utama Qt
         self.hotkey_manager.capture_next_key(lambda key_name: self.captured.emit(key_name))
 
     def _on_captured(self, key_name):
@@ -321,6 +321,7 @@ class ButtonConfigDialog(GlassDialog):
             self.trim_preview_placeholder, preview_btn
         ]
 
+        # Muat durasi kalau sudah ada file suara tersimpan sebelumnya
         if self.button_data.get("sound_path"):
             self._probe_duration(
                 self.button_data["sound_path"],
@@ -415,6 +416,7 @@ class ButtonConfigDialog(GlassDialog):
         )
         if path:
             self.sound_path_edit.setText(path)
+            # file baru -> reset potongan ke full (0 .. durasi)
             self._probe_duration(path, keep_existing=False)
 
     def _browse_app(self):
@@ -434,6 +436,7 @@ class ButtonConfigDialog(GlassDialog):
         for w in (self.app_row_label, self.app_row_widget, self.app_args_label, self.app_args_edit):
             w.setVisible(is_app)
 
+    # --- Trim (potong durasi) ---
     def _probe_duration(self, path: str, keep_existing: bool, existing_start: int = 0, existing_end=None):
         self._duration_ms = 0
         if self._probe_player:
@@ -523,7 +526,7 @@ class ProfileManagerDialog(GlassDialog):
         super().__init__(parent)
         self.setWindowTitle("Kelola Profile")
         self.setMinimumWidth(460)
-        self.profiles = [dict(p) for p in profiles]
+        self.profiles = [dict(p) for p in profiles]  # kerja di salinan; batal = tidak ada perubahan
         self.deleted_ids = set()
 
         outer = QVBoxLayout(self)
@@ -544,4 +547,282 @@ class ProfileManagerDialog(GlassDialog):
         add_btn.clicked.connect(self._add_new_profile)
         outer.addWidget(add_btn)
 
-        button
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        cancel_btn = GlassPillButton("Batal")
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = GlassPillButton("Simpan", "primary")
+        save_btn.clicked.connect(self._on_save)
+        button_row.addWidget(cancel_btn)
+        button_row.addWidget(save_btn)
+        outer.addSpacing(8)
+        outer.addLayout(button_row)
+
+    def _add_row(self, profile: dict):
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        edit = QLineEdit(profile["name"])
+        row.addWidget(edit)
+        del_btn = GlassPillButton("🗑", "danger")
+        del_btn.setFixedWidth(56)
+        del_btn.clicked.connect(lambda checked=False, pid=profile["id"]: self._remove_row(pid))
+        row.addWidget(del_btn)
+        container = QWidget()
+        container.setLayout(row)
+        self.rows_layout.addWidget(container)
+        self.row_widgets[profile["id"]] = (container, edit)
+
+    def _add_new_profile(self):
+        name, ok = QInputDialog.getText(self, "Profile Baru", "Nama profile:", text=f"Profile {len(self.profiles) + 1}")
+        if ok and name.strip():
+            new_p = config_manager.new_profile(name.strip())
+            self.profiles.append(new_p)
+            self._add_row(new_p)
+
+    def _remove_row(self, profile_id: str):
+        if len(self.profiles) - len(self.deleted_ids) <= 1:
+            QMessageBox.warning(self, "Tidak Bisa Dihapus", "Minimal harus ada 1 profile.")
+            return
+        confirm = QMessageBox.question(
+            self, "Hapus Profile", "Hapus profile ini beserta semua tombolnya?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.deleted_ids.add(profile_id)
+        container, _ = self.row_widgets.pop(profile_id)
+        container.deleteLater()
+
+    def _on_save(self):
+        for p in self.profiles:
+            if p["id"] in self.row_widgets:
+                p["name"] = self.row_widgets[p["id"]][1].text().strip() or p["name"]
+        self.profiles = [p for p in self.profiles if p["id"] not in self.deleted_ids]
+        self.accept()
+
+
+# ---------------------------------------------------------------- Main window
+class MainWindow(QMainWindow):
+    # Hotkey datang dari thread library keyboard; signal ini memindahkannya
+    # ke thread utama Qt supaya audio & UI aman dijalankan.
+    action_requested = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.action_requested.connect(self._execute_action)
+        self.setWindowTitle("StreamPad — Soundboard & Macro Deck untuk DumbPad")
+        self.resize(1040, 700)
+        self.setMinimumSize(760, 520)
+
+        self.config = config_manager.load_config()
+        self.audio_manager = AudioManager()
+        self.hotkey_manager = HotkeyManager()
+        self.edit_mode = False
+
+        self._build_ui()
+        self._register_all_hotkeys()
+
+    def _active_profile(self) -> dict:
+        return config_manager.get_active_profile(self.config)
+
+    def _build_ui(self):
+        root = LiquidBackground()
+        root.setObjectName("Root")
+        self.setCentralWidget(root)
+
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(28, 22, 28, 22)
+        outer.setSpacing(14)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        title = QLabel("StreamPad")
+        title.setObjectName("Title")
+        subtitle = QLabel("Soundboard & Macro Deck untuk DumbPad")
+        subtitle.setObjectName("Subtitle")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+        header_row.addLayout(title_box)
+        header_row.addStretch()
+
+        self.toggle = GlassToggle()
+        self.toggle.toggled.connect(self._set_edit_mode)
+        header_row.addWidget(self.toggle)
+
+        add_btn = GlassPillButton("＋  Tambah Tombol", "primary")
+        add_btn.clicked.connect(self._add_button)
+        header_row.addWidget(add_btn)
+        outer.addLayout(header_row)
+
+        self.profile_bar = ProfileBar()
+        self.profile_bar.add_requested.connect(self._add_profile)
+        self.profile_bar.profile_changed.connect(self._switch_profile)
+        self.profile_bar.manage_requested.connect(self._open_profile_manager)
+        outer.addWidget(self.profile_bar)
+
+        self.hint = QLabel()
+        self.hint.setObjectName("Hint")
+        outer.addWidget(self.hint)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
+        self.grid_container = QWidget()
+        self.grid_container.setAutoFillBackground(False)
+        self.grid = QGridLayout(self.grid_container)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(0)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(self.grid_container)
+        outer.addWidget(scroll, 1)
+
+        self._refresh_profile_bar()
+        self._render_buttons()
+        self._update_hint()
+
+    def _update_hint(self):
+        if self.edit_mode:
+            self.hint.setText("Mode Edit — klik kartu tombol untuk mengubah atau menghapusnya.")
+        else:
+            self.hint.setText("Mode Jalankan — klik kartu tombol untuk memutar suara atau membuka aplikasi.")
+
+    def _refresh_profile_bar(self):
+        self.profile_bar.populate(self.config["profiles"], self.config["active_profile"])
+
+    def _render_buttons(self):
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        profile = self._active_profile()
+        buttons = profile.get("buttons", [])
+        columns = max(1, profile.get("columns", 4))
+
+        if not buttons:
+            panel = GlassPanel(radius=28)
+            panel.setMinimumHeight(240)
+            box = QVBoxLayout(panel)
+            box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon = QLabel("🎛️")
+            icon.setStyleSheet("font-size: 52px;")
+            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            t = QLabel("Belum ada tombol di profile ini")
+            t.setObjectName("EmptyTitle")
+            t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            s = QLabel("Klik \"＋ Tambah Tombol\" untuk membuat tombol pertama.")
+            s.setObjectName("EmptyText")
+            s.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            box.addWidget(icon)
+            box.addWidget(t)
+            box.addWidget(s)
+            self.grid.addWidget(panel, 0, 0, 1, columns)
+            return
+
+        for index, button_data in enumerate(buttons):
+            deck_btn = DeckButton(button_data)
+            deck_btn.clicked.connect(lambda checked=False, b=button_data: self._on_button_clicked(b))
+            row, col = divmod(index, columns)
+            self.grid.addWidget(deck_btn, row, col)
+        for c in range(columns):
+            self.grid.setColumnStretch(c, 1)
+
+    def _set_edit_mode(self, is_edit: bool):
+        self.edit_mode = is_edit
+        self._update_hint()
+
+    # ---------------- Profile actions ----------------
+    def _add_profile(self):
+        name, ok = QInputDialog.getText(
+            self, "Profile Baru", "Nama profile:",
+            text=f"Profile {len(self.config['profiles']) + 1}"
+        )
+        if ok and name.strip():
+            profile = config_manager.new_profile(name.strip())
+            self.config["profiles"].append(profile)
+            self.config["active_profile"] = profile["id"]
+            self._save_and_refresh()
+
+    def _switch_profile(self, profile_id: str):
+        if profile_id == self.config["active_profile"]:
+            return
+        self.config["active_profile"] = profile_id
+        config_manager.save_config(self.config)
+        # tab sudah beranimasi sendiri; cukup ganti isi grid & hotkey
+        self._render_buttons()
+        self._register_all_hotkeys()
+
+    def _open_profile_manager(self):
+        dialog = ProfileManagerDialog(self.config["profiles"], self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.config["profiles"] = dialog.profiles
+            if self.config["active_profile"] not in [p["id"] for p in self.config["profiles"]]:
+                self.config["active_profile"] = self.config["profiles"][0]["id"]
+            self._save_and_refresh()
+
+    # ---------------- Button actions ----------------
+    def _add_button(self):
+        new_data = config_manager.new_button(str(uuid.uuid4()))
+        dialog = ButtonConfigDialog(new_data, self.hotkey_manager, self.audio_manager, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = dialog.get_result()
+            self._active_profile().setdefault("buttons", []).append(result)
+            self._save_and_refresh()
+
+    def _on_button_clicked(self, button_data: dict):
+        if self.edit_mode:
+            dialog = ButtonConfigDialog(button_data, self.hotkey_manager, self.audio_manager, self, allow_delete=True)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                buttons = self._active_profile()["buttons"]
+                if dialog.delete_requested:
+                    confirm = QMessageBox.question(
+                        self, "Hapus Tombol", f"Hapus tombol '{button_data.get('label')}'?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        self._active_profile()["buttons"] = [b for b in buttons if b["id"] != button_data["id"]]
+                        self._save_and_refresh()
+                    return
+                result = dialog.get_result()
+                for i, b in enumerate(buttons):
+                    if b["id"] == button_data["id"]:
+                        buttons[i] = result
+                        break
+                self._save_and_refresh()
+            return
+
+        self._execute_action(button_data)
+
+    def _execute_action(self, button_data: dict):
+        action = button_data.get("action_type")
+        if action == "sound":
+            self.audio_manager.play(
+                button_data.get("sound_path", ""),
+                button_data.get("sound_volume", 1.0),
+                start_ms=button_data.get("sound_start_ms", 0) or 0,
+                end_ms=button_data.get("sound_end_ms"),
+            )
+        elif action == "app":
+            launch_app(button_data.get("app_path", ""), button_data.get("app_args", ""))
+
+    def _register_all_hotkeys(self):
+        self.hotkey_manager.unregister_all()
+        for button_data in self._active_profile().get("buttons", []):
+            hotkey = button_data.get("hotkey")
+            if hotkey:
+                self.hotkey_manager.register(hotkey, lambda b=button_data: self.action_requested.emit(b))
+
+    def _save_and_refresh(self):
+        config_manager.save_config(self.config)
+        self._refresh_profile_bar()
+        self._render_buttons()
+        self._register_all_hotkeys()
+        self._update_hint()
+
+    def closeEvent(self, event):
+        self.hotkey_manager.unregister_all()
+        config_manager.save_config(self.config)
+        super().closeEvent(event)
