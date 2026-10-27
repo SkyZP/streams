@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from modules import config_manager
 from modules.audio_manager import AudioManager
-from modules.hotkey_manager import HotkeyManager
+from modules.hotkey_manager import HotkeyManager, key_name_from_event
 from modules.glass import (
     Tween, paint_glass, paint_glow, draw_icon, LiquidBackground, GlassPanel,
     GlassPillButton, GlassTab, GlassToggle, GlassSwitch, IconWidget, GlassDialog
@@ -269,26 +269,44 @@ class DeckButton(QPushButton):
 
 # ---------------------------------------------------------------- Hotkey capture
 class HotkeyCaptureButton(GlassPillButton):
-    captured = Signal(str)
+    """Klik, lalu tekan tombol (atau tombol di DumbPad) untuk merekam hotkey. Esc = batal."""
     DEFAULT_TEXT = "●  Rekam tombol"
 
     def __init__(self, hotkey_manager: HotkeyManager, line_edit: QLineEdit, parent=None):
         super().__init__(self.DEFAULT_TEXT, "normal", parent)
-        self.hotkey_manager = hotkey_manager
         self.line_edit = line_edit
+        self._capturing = False
         self.clicked.connect(self._start_capture)
-        self.captured.connect(self._on_captured)
 
     def _start_capture(self):
-        self.setText("Menunggu... tekan tombolnya")
-        self.setEnabled(False)
-        # callback datang dari thread library keyboard -> lewat signal ke thread utama Qt
-        self.hotkey_manager.capture_next_key(lambda key_name: self.captured.emit(key_name))
+        self._capturing = True
+        self.setText("Tekan tombolnya... (Esc batal)")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
+        self.grabKeyboard()
 
-    def _on_captured(self, key_name):
-        self.line_edit.setText(key_name)
+    def _stop_capture(self):
+        self._capturing = False
+        self.releaseKeyboard()
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setText(self.DEFAULT_TEXT)
-        self.setEnabled(True)
+
+    def keyPressEvent(self, event):
+        if not self._capturing:
+            super().keyPressEvent(event)
+            return
+        if event.key() == Qt.Key.Key_Escape:
+            self._stop_capture()
+            return
+        name = key_name_from_event(event)
+        if name:
+            self.line_edit.setText(name)
+            self._stop_capture()
+
+    def focusOutEvent(self, event):
+        if self._capturing:
+            self._stop_capture()
+        super().focusOutEvent(event)
 
 
 # ---------------------------------------------------------------- Config dialog
