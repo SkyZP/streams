@@ -38,13 +38,13 @@ del StreamPad.spec 2>nul
 
 echo.
 echo [3/3] Compile ke satu file .exe portable...
-python -m PyInstaller --onefile --windowed --name "StreamPad-1.0.0-portable" --icon=assets\icon.ico --add-data "assets\icon.ico;assets" main.py
+python -m PyInstaller --onedir --windowed --noupx --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick --exclude-module PySide6.Qt3DCore --exclude-module tkinter --name "StreamPad" --icon=assets\icon.ico --add-data "assets\icon.ico;assets" main.py
 
 echo.
-if exist dist\StreamPad-1.0.0-portable.exe (
+if exist dist\StreamPad\StreamPad.exe (
     echo ================================================
     echo   BERHASIL!
-    echo   File ada di: dist\StreamPad-1.0.0-portable.exe
+    echo   File ada di: dist\StreamPad\StreamPad.exe
     echo   Tinggal double klik - portable, tanpa instalasi.
     echo   Data tombol tersimpan otomatis di config.json
     echo   pada folder yang sama dengan file .exe ini.
