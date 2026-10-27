@@ -19,7 +19,8 @@ disusun di lingkungan Linux tanpa akses ke toolchain Windows.
 
 Kabar baiknya: prosesnya sudah disiapkan otomatis lewat `build.bat`. Kamu
 tinggal jalankan satu file itu di PC Windows-mu, dan hasilnya adalah **file
-`.exe` portable** — tinggal double klik, tanpa instalasi, tanpa registry
+`.exe` portable** — tinggal double klik, tanpa instalasi, tanpa registry,
+persis seperti yang kamu minta.
 
 ## Cara build jadi .exe
 
@@ -27,15 +28,15 @@ tinggal jalankan satu file itu di PC Windows-mu, dan hasilnya adalah **file
    centang **"Add Python to PATH"**.
 2. Extract folder `StreamPad` ini di mana saja.
 3. Double klik `build.bat` (atau jalankan dari Command Prompt di folder ini).
-4. Tunggu sampai selesai. Hasilnya ada di `dist\StreamPad-1.0.0-portable.exe`
-   — sudah pakai ikon custom, persis seperti contoh `DLSS5-Swapper-portable.exe`
-   yang kamu tunjukkan.
-5. Copy file `.exe` itu ke mana pun kamu mau — bisa dipindah-pindah,
-   dijalankan dari flashdisk, dari folder mana saja, tanpa instalasi.
+4. Tunggu sampai selesai. Hasilnya ada di folder `dist\StreamPad\`
+   (jalankan `StreamPad.exe` di dalamnya). Format folder (bukan satu file)
+   dipakai supaya jauh lebih jarang dianggap virus oleh antivirus.
+5. Copy **seluruh folder** `StreamPad` itu ke mana pun kamu mau (flashdisk,
+   dll) — tanpa instalasi. Jangan jalankan dari dalam file .zip.
 
 ### Soal penyimpanan data
 Sama seperti aplikasi portable pada umumnya: begitu kamu jalankan
-`StreamPad-1.0.0-portable.exe`, aplikasi otomatis membuat file `config.json`
+`StreamPad.exe`, aplikasi otomatis membuat file `config.json`
 **di folder yang sama** dengan file `.exe`-nya. Semua tombol, path sound
 effect, dan hotkey yang kamu atur tersimpan di situ — tidak nulis ke
 registry atau AppData. Kalau `.exe` dipindah, cukup bawa juga `config.json`
@@ -114,10 +115,11 @@ setup tombolmu tidak hilang.
 
 ## Catatan teknis
 
-- Pendengaran hotkey global memakai library `keyboard`, yang di beberapa
-  sistem **butuh dijalankan sebagai Administrator** agar bisa mendeteksi
-  tombol walau aplikasi lain sedang fokus. Kalau hotkey dari DumbPad tidak
-  terdeteksi, coba klik kanan `StreamPad.exe` → "Run as administrator".
+- Hotkey global memakai API resmi Windows `RegisterHotKey` (bukan library
+  `keyboard`), jadi tidak butuh Administrator dan tidak memicu antivirus.
+  Tombol yang jadi hotkey tidak diteruskan ke aplikasi lain selama StreamPad
+  berjalan; pakai F13-F24 di DumbPad supaya tidak bentrok. Klik "Rekam
+  tombol" lalu tekan tombolnya (Esc untuk batal).
 - Kontrol volume sistem sudah tidak ada di versi ini (dulu memakai `pycaw`);
   aksi sekarang cuma Putar Suara & Buka Aplikasi, jadi dependency-nya lebih
   ringan dan cepat di-build.
