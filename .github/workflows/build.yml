@@ -1,0 +1,60 @@
+name: Build StreamPad EXE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile jadi folder aplikasi (onedir, lebih jarang dianggap virus)
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --noupx --name StreamPad --icon=assets\icon.ico --version-file=version_info.txt --add-data "assets\icon.ico;assets" --exclude-module tkinter main.py
+
+      - name: Buat ZIP
+        run: |
+          Compress-Archive -Path dist\StreamPad -DestinationPath StreamPad-1.0.0-windows.zip
+
+      - name: Upload hasil
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamPad-windows
+          path: StreamPad-1.0.0-windows.zip
+
+      # ---------- Versi 2: TANPA exe buatan sendiri (paling kecil kemungkinan kena virus) ----------
+      # Memakai Python resmi dari python.org (bertanda tangan) + file .py apa adanya.
+      - name: Rakit versi Python-portable (tanpa exe PyInstaller)
+        shell: pwsh
+        run: |
+          $root = "bundle\StreamPad"
+          New-Item -ItemType Directory -Force "$root\python", "$root\app" | Out-Null
+          Invoke-WebRequest "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile py.zip
+          Expand-Archive py.zip "$root\python"
+          Copy-Item main.py "$root\app\"
+          Copy-Item modules "$root\app\modules" -Recurse
+          Copy-Item assets "$root\app\assets" -Recurse
+          python -m pip install --target "$root\app\libs" PySide6 keyboard
+          Set-Content "$root\python\python311._pth" "python311.zip`n.`n..\app`n..\app\libs"
+          Set-Content "$root\Jalankan StreamPad.bat" "@echo off`r`nstart `"`" `"%~dp0python\pythonw.exe`" `"%~dp0app\main.py`"" -Encoding ascii
+          Compress-Archive -Path "$root" -DestinationPath StreamPad-1.0.0-tanpa-exe.zip
+
+      - name: Upload versi tanpa exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamPad-tanpa-exe
+          path: StreamPad-1.0.0-tanpa-exe.zip
